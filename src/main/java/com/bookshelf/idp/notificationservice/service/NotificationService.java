@@ -1,26 +1,24 @@
 package com.bookshelf.idp.notificationservice.service;
 
+import com.bookshelf.idp.notificationservice.client.DatabaseServiceClient;
 import com.bookshelf.idp.notificationservice.dto.CreateNotificationRequestDto;
 import com.bookshelf.idp.notificationservice.dto.NotificationResponseDto;
 import com.bookshelf.idp.notificationservice.dto.UnreadCountDto;
 import com.bookshelf.idp.notificationservice.entity.Notification;
 import com.bookshelf.idp.notificationservice.exception.ForbiddenException;
 import com.bookshelf.idp.notificationservice.exception.NotFoundException;
-import com.bookshelf.idp.notificationservice.repository.NotificationRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 
 @Service
-@Transactional
 public class NotificationService {
 
-    private final NotificationRepository notificationRepository;
+    private final DatabaseServiceClient dbClient;
 
-    public NotificationService(NotificationRepository notificationRepository) {
-        this.notificationRepository = notificationRepository;
+    public NotificationService(DatabaseServiceClient dbClient) {
+        this.dbClient = dbClient;
     }
 
     public NotificationResponseDto create(CreateNotificationRequestDto dto) {
@@ -30,45 +28,37 @@ public class NotificationService {
         notification.setMessage(dto.getMessage());
         notification.setBookId(dto.getBookId());
         notification.setIsRead(false);
-        return toDto(notificationRepository.save(notification));
+        return toDto(dbClient.save(notification));
     }
 
     public List<NotificationResponseDto> getMyNotifications(String userEmail) {
-        return notificationRepository.findByUserEmailOrderByCreatedAtDesc(userEmail)
-                .stream()
-                .map(this::toDto)
-                .toList();
+        return dbClient.findByUserEmail(userEmail).stream().map(this::toDto).toList();
     }
 
     public UnreadCountDto getMyUnreadCount(String userEmail) {
-        Long count = notificationRepository.countByUserEmailAndIsReadFalse(userEmail);
-        return new UnreadCountDto(count);
+        return new UnreadCountDto(dbClient.countUnread(userEmail));
     }
 
     public NotificationResponseDto markAsRead(UUID id, String userEmail) {
-        Notification notification = notificationRepository.findById(id)
+        Notification notification = dbClient.findById(id)
                 .orElseThrow(() -> new NotFoundException("Notification not found"));
         if (!notification.getUserEmail().equals(userEmail)) {
             throw new ForbiddenException("You cannot modify this notification");
         }
-        notification.setIsRead(true);
-        return toDto(notificationRepository.save(notification));
+        return toDto(dbClient.markAsRead(id));
     }
 
     public void delete(UUID id, String userEmail) {
-        Notification notification = notificationRepository.findById(id)
+        Notification notification = dbClient.findById(id)
                 .orElseThrow(() -> new NotFoundException("Notification not found"));
         if (!notification.getUserEmail().equals(userEmail)) {
             throw new ForbiddenException("You cannot delete this notification");
         }
-        notificationRepository.delete(notification);
+        dbClient.delete(id);
     }
 
     public List<NotificationResponseDto> getAll() {
-        return notificationRepository.findAll()
-                .stream()
-                .map(this::toDto)
-                .toList();
+        return dbClient.findAll().stream().map(this::toDto).toList();
     }
 
     private NotificationResponseDto toDto(Notification n) {
